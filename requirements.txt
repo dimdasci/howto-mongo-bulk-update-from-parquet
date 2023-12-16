@@ -1,0 +1,14 @@
+pytest==7.0
+black==22.3
+flake8==4.0
+isort==5.12
+click==8.1
+aws-cdk-lib==2.101
+constructs>=10.0.0,<11.0.0
+dynaconf==3.1
+boto3==1.26
+pyarrow==7.0
+pymongo==4.6
+motor==3.3
+numpy==1.26
+pandas==2.1
