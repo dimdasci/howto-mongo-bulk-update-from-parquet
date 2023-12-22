@@ -1,3 +1,6 @@
+# local package
+-e .
+
 pytest==7.0
 black==22.3
 flake8==4.0
