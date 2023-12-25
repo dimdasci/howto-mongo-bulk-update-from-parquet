@@ -1,4 +1,4 @@
-"""Functions to read parquet files"""
+"""Functions to read parquet files in batches"""
 
 import logging
 from itertools import islice
@@ -13,6 +13,7 @@ DataSetFactoryFunction = Callable[[str, pa.schema, fs.FileSystem], DatasetOption
 DataSetProcessFunction = Callable[[dict, Any], Any]
 DictOptional = Union[dict[str, list[Any]], None]
 ListOptional = Union[list[dict[str, Any]], None]
+
 
 def create_dataset_from_filesystem(
     logger: logging.Logger,
@@ -49,7 +50,7 @@ def get_record_batch_iterator(
     dataset: DatasetOptional, schema: pa.Schema, batch_size: int
 ) -> Generator[pa.RecordBatch, None, None]:
     """
-    Returns iterator over dataset batches.
+    Returns iterator over dataset record batches.
 
     Args:
         dataset: PyArrow dataset object.
@@ -57,7 +58,7 @@ def get_record_batch_iterator(
         batch_size: Size of the batches.
 
     Returns:
-        Iterator over dataset batches.
+        Iterator over dataset record batches.
     """
 
     # if dataset is None return empty iterator
@@ -73,27 +74,40 @@ def get_record_batch_iterator(
     )
 
 
-def get_mongo_update_iterator(
-    record_batch_iterator: Generator[pa.RecordBatch, None, None], mongo_batch_size: int
+def get_sliced_iterator(
+    record_batch_iterator: Generator[pa.RecordBatch, None, None], slice_size: int
 ) -> Generator[pa.RecordBatch, None, None]:
     """
-    Returns iterator over dataset batches.
+    Returns an iterator over sliced dataset batches by specified batch size.
+
+    This function takes a generator of PyArrow RecordBatches (record_batch_iterator)
+    and slices them into batches of the specified size (batch_size).
 
     Args:
-        record_batch_iterator: PyArrow RecordBatch Iterator.
-        mongo_batch_size: Size of the batches.
+        record_batch_iterator (Generator[pa.RecordBatch, None, None]):
+            A generator yielding PyArrow RecordBatch objects.
+        batch_size (int):
+            The desired size of each batch.
 
     Returns:
-        Iterator over dataset batches.
+        Generator[pa.RecordBatch, None, None]:
+            An iterator over dataset batches, where each batch has the specified batch size.
+            If record_batch_iterator is None, an empty iterator is returned.
     """
 
-    # if dataset is None return empty iterator
-    # else return iterator over dataset batches
-    return (
-        iter(islice(record_batch_iterator, 0, None, mongo_batch_size))
-        if record_batch_iterator
-        else iter([])
-    )
+    if slice_size < 1:
+        # raise ValueError('n must be at least one')
+        return iter([])
+
+    if record_batch_iterator is None:
+        return iter([])
+
+    # Slice the iterator into batches of the specified size
+    # and yield each batch
+    iterator = iter(record_batch_iterator)
+    while batch := tuple(islice(iterator, slice_size)):
+        yield batch
+
 
 def transform_dict_to_list(dict_data: DictOptional) -> ListOptional:
     """
