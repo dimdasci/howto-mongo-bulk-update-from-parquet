@@ -1,3 +1,4 @@
+from math import ceil
 from unittest.mock import Mock
 
 import pyarrow as pa
@@ -5,8 +6,8 @@ import pyarrow.dataset as ds
 
 from src.func.parquet import (
     create_dataset_from_filesystem,
-    get_mongo_update_iterator,
     get_record_batch_iterator,
+    get_sliced_iterator,
     transform_dict_to_list,
 )
 
@@ -71,6 +72,7 @@ def test_dataset_batches():
         {"column1": [1, 2, 3, 4, 5], "column2": ["a", "b", "c", "d", "e"]},
         schema=schema,
     )
+    n_records: int = table.num_rows
 
     # Create a dummy PyArrow dataset with the table
     dataset = ds.dataset(table)
@@ -79,27 +81,33 @@ def test_dataset_batches():
     batches = list(get_record_batch_iterator(dataset, schema, batch_size))
 
     # Verify that the correct batches are returned
-    assert len(batches) == 3  # Dataset size is 5, batch size is 2 -> 3 batches
+    assert len(batches) == ceil(
+        n_records / batch_size
+    )  # Dataset size is 5, batch size is 2 -> 3 batches
     assert isinstance(batches[0], pa.RecordBatch)
-    assert batches[0].num_rows == 2  # Batch size is 2
+    assert batches[0].num_rows == batch_size
 
     # Test with None dataset
     empty_batches = list(get_record_batch_iterator(None, schema, batch_size))
     assert len(empty_batches) == 0  # No batches should be returned for None dataset
 
 
-def test_get_mongo_update_iterator():
+def test_get_sliced_iterator():
     # Mocking the necessary objects
     batch_size = 2
-
+    slice_size = 3
     # Create a dummy PyArrow schema for testing
     schema = pa.schema([("column1", pa.int64()), ("column2", pa.string())])
 
     # Create a dummy PyArrow table for testing
     table = pa.table(
-        {"column1": [1, 2, 3, 4, 5], "column2": ["a", "b", "c", "d", "e"]},
+        {
+            "column1": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+            "column2": ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"],
+        },
         schema=schema,
     )
+    n_records: int = table.num_rows
 
     # Create a dummy PyArrow dataset with the table
     dataset = ds.dataset(table)
@@ -108,32 +116,37 @@ def test_get_mongo_update_iterator():
     record_iterator = get_record_batch_iterator(dataset, schema, batch_size)
 
     # Call the function with the mocked objects
-    mongo_update_iterator = get_mongo_update_iterator(record_iterator, batch_size)
+    sliced_iterator = get_sliced_iterator(record_iterator, slice_size)
 
     # Verify that the correct batches are returned
-    batches = list(mongo_update_iterator)
-    assert len(batches) == 2  # Record batch size is 3, batch size is 2 -> 2 batches
+    slices = list(sliced_iterator)
+    assert len(slices) == ceil(ceil(n_records / batch_size) / slice_size)
+
+    batches = list(slices[0])
+    assert len(batches) == slice_size
     assert isinstance(batches[0], pa.RecordBatch)
-    assert batches[0].num_rows == 2  # Assuming the dataset size is 2
+
+    assert batches[0].num_rows == batch_size
 
     # Test with None record_batch_iterator
-    empty_iterator = get_mongo_update_iterator(None, batch_size)
+    empty_iterator = get_sliced_iterator(None, slice_size)
     assert (
         list(empty_iterator) == []
     )  # No batches should be returned for None record_batch_iterator
 
+
 def test_transform_dict_to_list():
     # Test with a dictionary containing columns 'ID', 'Name', and 'Age'
     input_dict = {
-        'ID': [1, 2, 3],
-        'Fruit': ['Apple', 'Orange', 'Plum'],
-        'Color': ['Green', 'Orange', 'Purple']
+        "ID": [1, 2, 3],
+        "Fruit": ["Apple", "Orange", "Plum"],
+        "Color": ["Green", "Orange", "Purple"],
     }
 
     expected_result = [
-        {'ID': 1, 'Fruit': 'Apple', 'Color': 'Green'},
-        {'ID': 2, 'Fruit': 'Orange', 'Color': 'Orange'},
-        {'ID': 3, 'Fruit': 'Plum', 'Color': 'Purple'}
+        {"ID": 1, "Fruit": "Apple", "Color": "Green"},
+        {"ID": 2, "Fruit": "Orange", "Color": "Orange"},
+        {"ID": 3, "Fruit": "Plum", "Color": "Purple"},
     ]
 
     result_list = transform_dict_to_list(input_dict)
@@ -145,6 +158,6 @@ def test_transform_dict_to_list():
     assert transform_dict_to_list(empty_dict) == None
 
     # Test with a dictionary with one column
-    single_column_dict = {'ID': [1, 2, 3]}
-    expected_single_column_result = [{'ID': 1}, {'ID': 2}, {'ID': 3}]
+    single_column_dict = {"ID": [1, 2, 3]}
+    expected_single_column_result = [{"ID": 1}, {"ID": 2}, {"ID": 3}]
     assert transform_dict_to_list(single_column_dict) == expected_single_column_result
