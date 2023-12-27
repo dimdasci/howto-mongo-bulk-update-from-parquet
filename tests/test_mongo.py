@@ -5,7 +5,13 @@ import pytest
 from pymongo.errors import BulkWriteError, OperationFailure
 from pymongo.operations import UpdateMany, UpdateOne
 
-from src.func.mongo import get_bulk_write_statements, make_update_statement, run_update, create_update_task
+from src.func.mongo import (
+    create_update_task,
+    get_bulk_write_statements,
+    make_update_statement,
+    run_update,
+    update_record_batches,
+)
 
 
 def test_make_update_statement():
@@ -190,12 +196,12 @@ async def test_create_update_task():
     # Mocking the necessary objects
     logger = logging.getLogger("test_logger")
     items = [
-        {'_id': 1, 'name': 'John', 'age': 30},
-        {'_id': 2, 'name': 'Jane', 'age': 25},
+        {"_id": 1, "name": "John", "age": 30},
+        {"_id": 2, "name": "Jane", "age": 25},
     ]
     mongo_collection = AsyncIOMotorCollectionMock()
-    id_column = '_id'
-    fields = ['name', 'age']
+    id_column = "_id"
+    fields = ["name", "age"]
     update_fn = UpdateOne
     ordered = False
 
@@ -218,3 +224,46 @@ async def test_create_update_task():
     )
     assert isinstance(task_none_items, asyncio.Task)
 
+
+@pytest.mark.asyncio
+async def test_update_record_batches():
+    # Mocking the necessary objects
+    logger = logging.getLogger("test_logger")
+    record_batches = [
+        [
+            {"_id": 1, "name": "John", "age": 30},
+            {"_id": 2, "name": "Jane", "age": 25},
+        ],
+        [
+            {"_id": 3, "name": "Doe", "age": 35},
+            {"_id": 4, "name": "Smith", "age": 40},
+        ],
+    ]
+    mongo_collection = AsyncIOMotorCollectionMock()
+    id_column = "_id"
+    fields = ["name", "age"]
+    update_fn = UpdateOne
+    ordered = False
+
+    # Test case with successful update of record batches
+    result = await update_record_batches(
+        logger, mongo_collection, record_batches, id_column, fields, update_fn, ordered
+    )
+    expected_result = [
+        {"n_matched": 2, "n_modified": 2},
+        {"n_matched": 2, "n_modified": 2},
+    ]
+    assert result == expected_result
+
+    # Test case with empty record batches
+    empty_record_batches = []
+    result_empty_batches = await update_record_batches(
+        logger,
+        mongo_collection,
+        empty_record_batches,
+        id_column,
+        fields,
+        update_fn,
+        ordered,
+    )
+    assert result_empty_batches == []

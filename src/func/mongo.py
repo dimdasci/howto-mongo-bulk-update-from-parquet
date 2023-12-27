@@ -5,7 +5,7 @@ import logging
 from asyncio import Task, create_task, gather
 from typing import Any, Callable, Union
 
-from motor.motor_asyncio import AsyncIOMotorCollection
+from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorCollection
 from pymongo import UpdateMany, UpdateOne
 from pymongo.errors import BulkWriteError, OperationFailure
 
@@ -95,16 +95,22 @@ async def run_update(
     sequence = list(update_statements)
     if len(sequence) == 0:
         return None
-    
+
     try:
-        write_result = await mongo_collection.bulk_write(
-            sequence, ordered=ordered
-        )
+        logger.debug(f"MongoDB bulk write sequence of {len(sequence)} statements.")
+        write_result = await mongo_collection.bulk_write(sequence, ordered=ordered)
         result = {
             "n_matched": write_result.matched_count,
             "n_modified": write_result.modified_count,
+            "n_upserted": write_result.upserted_count,
+            "n_inserted": write_result.inserted_count,
         }
-        logger.debug(f"MongoDB bulk write result: {result}")
+        logger.debug(
+            f"MongoDB bulk write done: {result['n_matched']} matched, "
+            f"{result['n_modified']} modified, "
+            f"{result['n_inserted']} inserted, "
+            f"{result['n_upserted']} upserted."
+        )
     except BulkWriteError as bwe:
         logger.error(f"MongoDB bulk write error: {bwe.details}")
         result = None
@@ -163,6 +169,7 @@ async def update_record_batches(
     Updates a list of record batches in a MongoDB collection.
     """
 
+    logger.info("Starting bulk update process...")
     tasks = [
         create_update_task(
             logger=logger,
@@ -175,7 +182,21 @@ async def update_record_batches(
         )
         for record_batch in record_batches
     ]
-
+    logger.info(f"Created {len(tasks)} concurrent tasks.")
     results = await gather(*tasks)
+    logger.info("Finished bulk update process.")
 
     return results
+
+
+def get_mongo_collection(
+    connection: str, database: str, collection: str
+) -> AsyncIOMotorCollection:
+    """
+    Returns a MongoDB collection object.
+    """
+
+    client = AsyncIOMotorClient(connection)
+    mongo_collection = client[database][collection]
+
+    return mongo_collection
