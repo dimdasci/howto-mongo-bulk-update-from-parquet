@@ -50,10 +50,10 @@ lint:
 	flake8 src iac
 
 ## Run tests using pytest
-test:
+tests:
 	pytest tests/
 
-.PHONY: clean clean_py clean_cdk_out format lint test
+.PHONY: clean clean_py clean_cdk_out format lint tests
 
 #################################################################################
 # DEPLOYMENT COMMANDS                                                           #
