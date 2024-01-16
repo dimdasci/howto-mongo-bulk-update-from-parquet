@@ -15,6 +15,7 @@ setup(
     entry_points={
         'console_scripts': [
             'generate_data = src.cli.generate_data:main',
+            'mongo_update = src.cli.mongo_update:main'
         ],
     },
 )
