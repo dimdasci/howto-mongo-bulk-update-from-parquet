@@ -1,7 +1,7 @@
 """Functions to read parquet files in batches"""
 
-import logging
 from itertools import islice
+from logging import Logger
 from typing import Any, Callable, Generator, Union
 
 import pyarrow as pa
@@ -16,7 +16,7 @@ ListOptional = Union[list[dict[str, Any]], None]
 
 
 def create_dataset_from_filesystem(
-    logger: logging.Logger,
+    logger: Logger,
     path: str,
     schema: pa.Schema,
     filesystem: fs.FileSystem,
@@ -36,11 +36,16 @@ def create_dataset_from_filesystem(
         PyArrow dataset object or None if the dataset creation fails
     """
     try:
-        logger.debug(f"Creating dataset from {path}, schema: {schema}")
         dataset = dataset_factory(source=path, schema=schema, filesystem=filesystem)
     except Exception as e:
-        logger.error(f"Failed to create dataset from {path}: {e}")
+        logger.error(dict(msg="Failed to create dataset", path=path, error=e))
         dataset = None
+
+    logger.info(
+        dict(
+            stage="Create dataset", path=path, status="Success" if dataset else "Failed"
+        )
+    )
 
     return dataset
 
@@ -86,7 +91,7 @@ def get_sliced_iterator(
     Args:
         record_batch_iterator (Generator[pa.RecordBatch, None, None]):
             A generator yielding PyArrow RecordBatch objects.
-        batch_size (int):
+        slice_size (int):
             The desired size of each batch.
 
     Returns:

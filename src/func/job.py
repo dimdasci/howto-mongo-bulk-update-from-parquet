@@ -1,5 +1,7 @@
 """Module to run an update
 """
+from logging import Logger
+
 import pyarrow as pa
 import pyarrow.dataset as ds
 import pyarrow.fs as fs
@@ -16,17 +18,16 @@ from src.func.parquet import (
 
 
 async def run_update(
-    logger,
-    path,
-    batch_size,
-    concurrent_tasks,
+    logger: Logger,
+    path: str,
+    batch_size: int,
+    concurrent_tasks: int,
+    filesystem: fs.LocalFileSystem,
     collection: AsyncIOMotorCollection,
 ) -> None:
     """
     Runs the bulk update process.
     """
-    # Create a PyArrow filesystem object
-    filesystem = fs.LocalFileSystem()
 
     schema = pa.schema(
         [
@@ -61,9 +62,17 @@ async def run_update(
     print(
         f"Read data in {batch_size} row batches and process in {concurrent_tasks} concurrent tasks"
     )
+    logger.info(
+        dict(
+            stage="Start read and update",
+            batch_size=batch_size,
+            concurrent_tasks=concurrent_tasks,
+        )
+    )
     results = [
         await update_record_batches(
             logger=logger,
+            index=si,
             mongo_collection=collection,
             record_batches=[
                 transform_dict_to_list(record_batch.to_pydict())
@@ -74,7 +83,12 @@ async def run_update(
             update_fn=UpdateOne,
             ordered=False,
         )
-        for slice in mongo_iterator
+        for si, slice in enumerate(mongo_iterator)
     ]
 
-    logger.info(results)
+    logger.info(
+        dict(
+            stage="Finish read and update",
+            results=results,
+        )
+    )

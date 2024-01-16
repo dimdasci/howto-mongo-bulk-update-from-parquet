@@ -28,6 +28,7 @@ logging:
     propagate: True
     handlers:
       - console
+      - logfile
       - watchtower
   loggers:
     botocore:

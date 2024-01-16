@@ -1,9 +1,10 @@
 """
 Functions to interact with MongoDB
 """
-import logging
 from asyncio import Task, create_task, gather
-from typing import Any, Callable, Union
+from logging import Logger
+from time import time
+from typing import Any, Callable, Optional, Union
 
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorCollection
 from pymongo import UpdateMany, UpdateOne
@@ -20,8 +21,14 @@ MakeUpdateFunction = Callable[
 ]
 UpdateResultOptional = Union[dict[str, int], None]
 
+# Global variable to store the start time of the job
+INIT_TIME = time()
+
 
 def make_update_statement(
+    logger: Logger,
+    slice_index: int,
+    task_index: int,
     item: ItemOptional,
     id_column: str,
     fields: list[str],
@@ -37,13 +44,16 @@ def make_update_statement(
     """
 
     if item is None:
+        logger.error(dict(msg="No item to make update statement"))
         return None
 
     id = item.get(id_column)
     if id is None:
+        logger.error(dict(msg="No id to make update statement", id_column=id_column))
         return None
 
     if fields is None or len(fields) == 0:
+        logger.error(dict(msg="No fields to update"))
         return None
 
     filter = {id_column: id}
@@ -55,6 +65,17 @@ def make_update_statement(
             "updatedAt": True,
         },
     }
+    logger.debug(
+        dict(
+            stage="Made update statement",
+            filter=filter,
+            update=update,
+            slice_index=slice_index,
+            task_index=task_index,
+            status="Success",
+        )
+    )
+
     return update_fn(filter=filter, update=update, upsert=True)
 
 
@@ -80,7 +101,7 @@ def get_bulk_write_statements(
 
 
 async def run_update(
-    logger: logging.Logger,
+    logger: Logger,
     update_statements: BulkUpdateOptional,
     mongo_collection: AsyncIOMotorCollection,
     ordered: bool = False,
@@ -90,14 +111,31 @@ async def run_update(
     """
 
     if update_statements is None:
+        logger.error(
+            dict(
+                msg="No update statements",
+                status="Failed",
+            )
+        )
         return None
 
     sequence = list(update_statements)
     if len(sequence) == 0:
+        logger.error(
+            dict(
+                msg="Update statements list is empty",
+                status="Failed",
+            )
+        )
         return None
 
+    # prepare status dict for logging
+    status = dict(
+        stage="MongoDB bulk write",
+        n_statements=len(sequence),
+    )
+
     try:
-        logger.debug(f"MongoDB bulk write sequence of {len(sequence)} statements.")
         write_result = await mongo_collection.bulk_write(sequence, ordered=ordered)
         result = {
             "n_matched": write_result.matched_count,
@@ -105,27 +143,30 @@ async def run_update(
             "n_upserted": write_result.upserted_count,
             "n_inserted": write_result.inserted_count,
         }
-        logger.debug(
-            f"MongoDB bulk write done: {result['n_matched']} matched, "
-            f"{result['n_modified']} modified, "
-            f"{result['n_inserted']} inserted, "
-            f"{result['n_upserted']} upserted."
-        )
+        status.update(dict(status="Success", **result))
+
     except BulkWriteError as bwe:
-        logger.error(f"MongoDB bulk write error: {bwe.details}")
+        logger.error(dict(msg="MongoDB bulk write error", error=bwe.details))
+        status.update(dict(status="Failure"))
         result = None
     except OperationFailure as of:
-        logger.error(f"MongoDB operation failure: {of.details}")
+        logger.error(dict(msg="MongoDB bulk write error", error=of.details))
+        status.update(dict(status="Failure"))
         result = None
     except Exception as e:
-        logger.error(f"MongoDB unknown error: {e}")
+        logger.error(dict(msg="MongoDB bulk write error", error=e))
+        status.update(dict(status="Failure"))
         result = None
+
+    logger.debug(status)
 
     return result
 
 
 def create_update_task(
-    logger: logging.Logger,
+    logger: Logger,
+    slice_index: int,
+    task_index: int,
     mongo_collection: AsyncIOMotorCollection,
     items: ListOptional,
     id_column: str,
@@ -140,7 +181,13 @@ def create_update_task(
     update_statements: BulkUpdateOptional = get_bulk_write_statements(
         items=items,
         make_update_fn=lambda item: make_update_statement(
-            item=item, id_column=id_column, fields=fields, update_fn=update_fn
+            logger=logger,
+            slice_index=slice_index,
+            task_index=task_index,
+            item=item,
+            id_column=id_column,
+            fields=fields,
+            update_fn=update_fn,
         ),
     )
 
@@ -152,12 +199,21 @@ def create_update_task(
             ordered=ordered,
         )
     )
+    logger.debug(
+        dict(
+            stage="Update task created",
+            slice_index=slice_index,
+            task_index=task_index,
+            status="Success",
+        )
+    )
 
     return task
 
 
 async def update_record_batches(
-    logger: logging.Logger,
+    logger: Logger,
+    index: int,
     mongo_collection: AsyncIOMotorCollection,
     record_batches: list[ListOptional],
     id_column: str,
@@ -169,10 +225,11 @@ async def update_record_batches(
     Updates a list of record batches in a MongoDB collection.
     """
 
-    logger.info("Starting bulk update process...")
     tasks = [
         create_update_task(
             logger=logger,
+            slice_index=index,
+            task_index=ti,
             mongo_collection=mongo_collection,
             items=record_batch,
             id_column=id_column,
@@ -180,23 +237,65 @@ async def update_record_batches(
             update_fn=update_fn,
             ordered=ordered,
         )
-        for record_batch in record_batches
+        for ti, record_batch in enumerate(record_batches)
     ]
-    logger.info(f"Created {len(tasks)} concurrent tasks.")
+
+    # store start time
+    start_time = round(time() - INIT_TIME, 1)  # seconds
+
+    logger.info(
+        dict(
+            stage="Created concurrent tasks",
+            slice_index=index,
+            start_time=start_time,
+            n_tasks=len(tasks),
+            status="Success",
+        )
+    )
+
     results = await gather(*tasks)
-    logger.info("Finished bulk update process.")
+
+    logger.info(
+        dict(
+            stage="Executed concurrent tasks",
+            index=index,
+            finish_time=round(time() - INIT_TIME, 1),  # seconds
+            duration_sec=round(time() - INIT_TIME - start_time, 1),  # seconds
+            n_results=len(results),
+            status="Success",
+        )
+    )
 
     return results
 
 
 def get_mongo_collection(
-    connection: str, database: str, collection: str
-) -> AsyncIOMotorCollection:
+    logger: Logger, connection: str, database: str, collection: str
+) -> Optional[AsyncIOMotorCollection]:
     """
     Returns a MongoDB collection object.
     """
 
-    client = AsyncIOMotorClient(connection)
-    mongo_collection = client[database][collection]
+    try:
+        client = AsyncIOMotorClient(connection)
+        mongo_collection = client[database][collection]
+    except Exception as e:
+        logger.error(
+            dict(
+                msg="Failed to get mongo collection",
+                database=database,
+                collection=collection,
+                error=e,
+            )
+        )
+        mongo_collection = None
 
+    logger.info(
+        dict(
+            stage="Get mongo collection",
+            database=database,
+            collection=collection,
+            status="Success" if mongo_collection is not None else "Failed",
+        )
+    )
     return mongo_collection

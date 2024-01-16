@@ -3,6 +3,7 @@ from asyncio import run
 
 import click
 from motor.motor_asyncio import AsyncIOMotorCollection
+from pyarrow import fs
 from watchtower import CloudWatchLogHandler
 
 from src.config import config
@@ -49,7 +50,7 @@ def main(
     set_env_to_credentials(profile)
 
     # Create a logger object
-    handler: CloudWatchLogHandler = setup_logger(logging.INFO)
+    handler: CloudWatchLogHandler = setup_logger(logging.DEBUG)
     LOGGER.info(
         dict(
             stage="Start Job",
@@ -58,13 +59,27 @@ def main(
             ),
         )
     )
+
     collection: AsyncIOMotorCollection = get_mongo_collection(
+        logger=LOGGER,
         connection=config.MONGO_CONNECTION_STRING,
         database=config.database,
         collection=config.collection,
     )
 
-    run(run_update(LOGGER, path, batch_size, concurrent_tasks, collection))
+    # PyArrow filesystem object
+    filesystem = fs.LocalFileSystem()
+
+    run(
+        run_update(
+            logger=LOGGER,
+            path=path,
+            batch_size=batch_size,
+            concurrent_tasks=concurrent_tasks,
+            filesystem=filesystem,
+            collection=collection,
+        )
+    )
 
     LOGGER.info(dict(stage="Finish Job"))
     close_handler(handler)
