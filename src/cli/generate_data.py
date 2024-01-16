@@ -25,7 +25,7 @@ Schema = list[SchemaEntry]
 #######################
 
 DATA_SCHEMA: Schema = [
-    ("id", pa.string(), False),
+    ("_id", pa.string(), False),
     ("feature_1", pa.float64(), True),
     ("feature_2", pa.float64(), True),
     ("feature_3", pa.float64(), True),
