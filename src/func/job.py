@@ -1,5 +1,6 @@
 """Module to run an update
 """
+from functools import reduce
 from logging import Logger
 
 import pyarrow as pa
@@ -86,9 +87,22 @@ async def run_update(
         for si, slice in enumerate(mongo_iterator)
     ]
 
+    # consolidate results
+    # helper function to flatten list of dicts removing None values
+    flat_map = lambda f, xs: filter(
+        lambda x: x is not None, reduce(lambda a, b: a + b, map(f, xs))
+    )
+
+    # helper function to sum dicts by summarizing values of fields
+    fields = ["n_matched", "n_modified", "n_upserted", "n_inserted"]
+    result_sum = lambda a, b: {k: a.get(k, 0) + b.get(k, 0) for k in fields}
+
+    # consolidate results by reducing list of dicts to a single dict
+    consolidated_results = reduce(result_sum, flat_map(lambda x: x, results))
+
     logger.info(
         dict(
             stage="Finish read and update",
-            results=results,
+            results=consolidated_results,
         )
     )

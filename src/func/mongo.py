@@ -146,9 +146,16 @@ async def run_update(
         status.update(dict(status="Success", **result))
 
     except BulkWriteError as bwe:
+        # Log the details of the error and return the result
         logger.error(dict(msg="MongoDB bulk write error", error=bwe.details))
         status.update(dict(status="Failure"))
-        result = None
+        result = {
+            "n_matched": bwe.details["nMatched"],
+            "n_modified": bwe.details["nModified"],
+            "n_upserted": bwe.details["nUpserted"],
+            "n_inserted": bwe.details["nInserted"],
+        }
+        status.update(dict(status="Success", **result))
     except OperationFailure as of:
         logger.error(dict(msg="MongoDB bulk write error", error=of.details))
         status.update(dict(status="Failure"))
