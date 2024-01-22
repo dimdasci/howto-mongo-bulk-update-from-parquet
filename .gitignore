@@ -165,5 +165,6 @@ cython_debug/
 # Data
 assets/data/*
 
-# Logs
+# Logs and profiler files
+mprofile*
 logs/*

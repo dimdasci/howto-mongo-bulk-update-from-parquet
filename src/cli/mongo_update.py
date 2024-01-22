@@ -19,7 +19,7 @@ from src.func.mongo import get_mongo_collection
     "-p",
     type=click.Path(),
     default="assets/data/",
-    help="Path to the parquet files",
+    help="Path to the directory with parquet files or a file",
     show_default=True,
 )
 # option for read batch size, int, default 10000
@@ -40,7 +40,7 @@ from src.func.mongo import get_mongo_collection
     help="Number of concurrent update tasks",
     show_default=True,
 )
-@click.option("--profile", "-p", type=click.STRING, help="AWS profile, optional")
+@click.option("--profile", type=click.STRING, help="AWS profile, optional")
 def main(
     path: str, batch_size: int, concurrent_tasks: int, profile: str = None
 ) -> None:
