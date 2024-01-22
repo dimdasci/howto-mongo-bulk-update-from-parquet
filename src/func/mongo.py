@@ -38,10 +38,19 @@ def make_update_statement(
     Creates a PyMongo UpdateOne statement for a given item.
 
     Args:
+        logger: Logger object.
+        slice_index: Index of the slice.
+        task_index: Index of the task.
         item: Dictionary with the item to update.
         id_column: Name of the id column.
         fields: List of fields to update.
+        update_fn: PyMongo update function.
+
+    Returns:
+        PyMongo UpdateOne statement.
     """
+    print(item)
+    assert isinstance(item, dict)
 
     if item is None:
         logger.error(dict(msg="No item to make update statement"))
@@ -183,7 +192,8 @@ def create_update_task(
 ) -> Task:
     """
     Creates an async task to run a bulk write operation on a MongoDB collection.
-    """
+    """   
+    assert isinstance(items, list)
 
     update_statements: BulkUpdateOptional = get_bulk_write_statements(
         items=items,

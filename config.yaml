@@ -18,7 +18,7 @@ logging:
     watchtower:
       class: watchtower.CloudWatchLogHandler
       level: DEBUG
-      log_group_name: "mongo_update"
+      log_group_name: "test/mongo_update"
       log_group_retention_days: 3
       log_stream_name: "{logger_name}-{strftime:%y-%m-%d}"
       send_interval: 10
@@ -28,7 +28,6 @@ logging:
     propagate: True
     handlers:
       - console
-      - logfile
       - watchtower
   loggers:
     botocore:
